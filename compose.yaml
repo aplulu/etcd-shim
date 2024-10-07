@@ -1,0 +1,52 @@
+services:
+  etcd-shim:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+      target: builder
+    command: air
+    volumes:
+      - ./:/go/src/app
+    ports:
+      - "2379:2379"
+    networks:
+      - backend-network
+  apisix-init:
+    image: busybox:1.28
+    command:
+      - sh
+      - -c
+      - until nc -z etcd-shim 2379; do echo waiting for etcd-shim; sleep 2; done
+    networks:
+      - backend-network
+    depends_on:
+      etcd-shim:
+          condition: service_started
+  apisix:
+    image: apache/apisix:3.10.0-debian
+    ports:
+      - "9090:9090"
+      - "9180:9180"
+    volumes:
+      - ./docker/apisix/config.yaml:/usr/local/apisix/conf/config.yaml
+    networks:
+      - backend-network
+    depends_on:
+      apisix-init:
+        condition: service_completed_successfully
+  apisix-dashboard:
+    profiles:
+      - dashboard
+    image: apache/apisix-dashboard:3.0.0-alpine
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./docker/apisix-dashboard/conf.yaml:/usr/local/apisix-dashboard/conf/conf.yaml
+    networks:
+      - backend-network
+    depends_on:
+      apisix-init:
+        condition: service_completed_successfully
+networks:
+  backend-network:
+    driver: bridge
